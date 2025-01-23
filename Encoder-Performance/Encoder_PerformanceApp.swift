@@ -25,7 +25,7 @@ struct Encoder_PerformanceApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LiveCaptureView()
         }
         .modelContainer(sharedModelContainer)
     }
