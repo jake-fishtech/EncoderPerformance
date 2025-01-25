@@ -15,13 +15,11 @@ class SimpleHEVCCodec {
     private var height: Int32
     private var bitrate: Int
     private var usingSoftwareDecoder: Bool = false
-    private var keyFrameEveryN: Int = 20
     
-    init?(width: Int32, height: Int32, bitrate: Int, keyFrameEveryN: Int = 20) {
+    init?(width: Int32, height: Int32, bitrate: Int) {
         self.width = width
         self.height = height
         self.bitrate = bitrate
-        self.keyFrameEveryN = keyFrameEveryN
         guard setupEncoder() else {
             return nil
         }
@@ -32,53 +30,53 @@ class SimpleHEVCCodec {
         let imageBufferAttributes: [String: Any] = [
             kCVPixelBufferWidthKey as String: NSNumber(value: width),
             kCVPixelBufferHeightKey as String: NSNumber(value: height),
-            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32BGRA)
+            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
         ]
         
-        let status = VTCompressionSessionCreate(allocator: nil,
-                                                width: width,
-                                                height: height,
-                                                codecType: kCMVideoCodecType_HEVC,
-                                                encoderSpecification: encoderSpecification as CFDictionary,
-                                                imageBufferAttributes: imageBufferAttributes as CFDictionary,
-                                                compressedDataAllocator: nil,
-                                                outputCallback: nil,
-                                                refcon: nil,
-                                                compressionSessionOut: &encoderSession)
+        var status = VTCompressionSessionCreate(allocator: nil,
+                                              width: width,
+                                              height: height,
+                                              codecType: kCMVideoCodecType_HEVC,
+                                              encoderSpecification: encoderSpecification as CFDictionary,
+                                              imageBufferAttributes: imageBufferAttributes as CFDictionary,
+                                              compressedDataAllocator: nil,
+                                              outputCallback: nil,
+                                              refcon: nil,
+                                              compressionSessionOut: &encoderSession)
         
         guard status == noErr, let session = encoderSession else {
             print("Failed to create encoder session: \(status)")
             return false
         }
         
-        
-        
         // Set real-time encoding properties
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_HEVC_Main_AutoLevel)
+        status = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
+        status = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_HEVC_Main_AutoLevel)
         
-        // **Set the average bit rate**
-        VTSessionSetProperty(session,
-                             key: kVTCompressionPropertyKey_AverageBitRate,
-                             value: NSNumber(value: bitrate))
+        // Set the average bit rate
+        status = VTSessionSetProperty(session,
+                                    key: kVTCompressionPropertyKey_AverageBitRate,
+                                    value: NSNumber(value: bitrate))
         
-        // Optionally, you can set data rate limits (in bytes per second)
-        let dataRateLimits: [NSNumber] = [NSNumber(value: bitrate / 8), NSNumber(value: 1)] // [bytes per second, seconds]
-        VTSessionSetProperty(session,
-                             key: kVTCompressionPropertyKey_DataRateLimits,
-                             value: dataRateLimits as CFArray)
+        // Use default key frame interval (typically 1-2 seconds)
+        status = VTSessionSetProperty(session,
+                                    key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
+                                    value: NSNumber(value: 1)) // 1 second
         
+        // Allow frame reordering for better compression
+        status = VTSessionSetProperty(session,
+                                    key: kVTCompressionPropertyKey_AllowFrameReordering,
+                                    value: kCFBooleanFalse)
         
-        // **Force every frame to be a keyframe**
-        let keyframeInterval = NSNumber(value: keyFrameEveryN)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: keyframeInterval)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: NSNumber(value: 1)) //seconds
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+        // Enable hardware acceleration
+        status = VTSessionSetProperty(session,
+                                    key: kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
+                                    value: kCFBooleanTrue)
         
         // Prepare the encoder
-        VTCompressionSessionPrepareToEncodeFrames(session)
+        status = VTCompressionSessionPrepareToEncodeFrames(session)
         
-        return true
+        return status == noErr
     }
     
     func calculatePixelBufferHash(from pixelBuffer: CVPixelBuffer) -> UInt64 {

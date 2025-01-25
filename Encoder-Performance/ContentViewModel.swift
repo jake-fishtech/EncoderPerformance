@@ -84,7 +84,7 @@ class BrianCameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     override init() {
         
         self.ringBuffer = RingBuffer(capacity: RING_BUFFER_SIZE)
-        self.codec = SimpleHEVCCodec(width: 3840, height: 2160, bitrate: 100_000_000, keyFrameEveryN: keyFrameFrequency)!
+        self.codec = SimpleHEVCCodec(width: 3840, height: 2160, bitrate: 100_000_000)!
         
         self.contextDisplay = CIContext(options: nil)
         self.processFileSemaphore = DispatchSemaphore(value: 0)
@@ -183,12 +183,18 @@ class BrianCameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
             }
             
             let videoOutput = AVCaptureVideoDataOutput()
-            videoOutput.videoSettings = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-            ]
+            
+            // Use Apple's recommended video settings for HEVC
+            if let recommendedSettings = videoOutput.recommendedVideoSettingsForAssetWriter(writingTo: .mov) {
+                videoOutput.videoSettings = recommendedSettings
+            } else {
+                // Fallback to YUV format if recommended settings aren't available
+                videoOutput.videoSettings = [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                ]
+            }
             
             let videoQueue = DispatchQueue(label: "app.pitchlab.videoQueue", qos: .userInitiated)
-            
             videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
             
             if captureSession.canAddOutput(videoOutput) {
